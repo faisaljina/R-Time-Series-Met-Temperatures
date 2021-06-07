@@ -1,0 +1,982 @@
+---
+title: "Time Series - Met Temperatures"
+subtitle: "Tackling Time Series in Base R"
+author: "Faisal Jina"
+date: "07/06/2021"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    fig_width: 12
+    fig_height: 8
+    fig_caption: true
+    df_print: kable
+---
+
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE, include = FALSE, comment = NA, fig.height = 6, tidy = FALSE)
+```
+
+```{r packages, echo = FALSE}
+library(magrittr)
+library(knitr)
+```
+
+\newpage
+
+# Introduction
+
+This report look to examine temperature patterns across the UK. Specifically, a time series approach is used, and the maximum (Tmax), minimum (Tmin) and average (Tmean) temperature data is used from the government Met Office website (https://www.metoffice.gov.uk/research/climate/maps-and-data/uk-and-regional-series). Trends and seasonality are estimated for each region/district selected, and subsequent residuals are modelled to produce ARMA models. Forecasts are then produced to assess accuracy of the predictions.
+
+
+# Task I - Getting the data
+
+A script is written in R to automate the process of gathering the data required. A time window of 1884 to 2020 is taken, and the selected 'districts' and 'features' parameters are output below.
+
+
+```{r include = TRUE}
+url1 <- "https://www.metoffice.gov.uk/pub/data/weather/uk/climate/datasets/"
+url2 <- "/date/"
+url3 <- ".txt"
+
+read.ts <- function(district = district, feature = feature){
+  c(url1, feature, url2, district, url3) %>%
+    paste(collapse = "") %>%
+    read.table(skip = 5,
+               nrows = 137,
+               header = TRUE) %>% 
+    subset(select = c(2:13)) %>% 
+    t() %>% 
+    as.vector() %>% 
+    ts(start = c(1884, 1),
+       end = c(2020, 12),
+       frequency = 12)
+}
+
+districts <- c(
+  "Northern_Ireland",
+  "Scotland_N",
+  "Scotland_E",
+  "Scotland_W",
+  "England_E_and_NE",
+  "England_NW_and_N_Wales",
+  "Midlands",
+  "East_Anglia",
+  "England_SW_and_S_Wales",
+  "England_SE_and_Central_S"
+  )
+features <- c("Tmax", "Tmin", "Tmean")
+
+data <- lapply(features, function(feature = feature)
+  lapply(districts, read.ts, feature = feature) %>%
+    set_names(districts)) %>% 
+  set_names(features)
+
+cat("Features: \n")
+cat(paste("- ", features, collapse = "\n"))
+cat("\nDistricts: \n")
+cat(paste("- ", districts, collapse = "\n"))
+```
+This gives a total of 30 time series object to work with.  
+
+
+# Task II - R programming
+
+The script should be computationally efficient to run in R, so for loops are avoided in favour of a vectorised approach, achieved mostly using lapply. Additionally, where possible, coding is such that alternative date ranges, features, and districts could be substituted in and run with minimal changes to the code.  
+
+Some simple list operations are performed to find the district and date (year and month) of the highest and the lowest max, min and mean temperature. The output is below.
+
+```{r}
+# Find the region with the highest and lowest values
+highlow <- function(data){
+  c(data %>% which.max(),
+    data %>% which.min())
+}
+
+# General formula to find the region giving the highest and lowest of each feature of the dataset from a given function
+find_prop <- function(operation) {
+  lapply(data, function(d=district)
+  lapply(d, operation) %>% unlist() %>% highlow())
+}
+
+# Find the max and min values
+summarise <- function(data){
+  c(data %>% max(),
+    data %>% min())
+}
+
+find_dist <- find_prop(summarise)
+
+
+find_date <- function(maxmin = maxmin, feature = feature, data_list = find_dist, get_date = 0){
+  
+  if(maxmin == "max"){
+    pos = 1
+  } else if (maxmin == "min"){
+    pos = 2
+  } else {
+    stop("maxmin should only be set to 'max' or 'min'")
+  }
+  col <- data_list[[feature]][pos] %>% names()
+  
+  # Check for terminal digit in district name, remove if present
+  # Warnings suppressed to allow successful coercion to integer or to NAs without warnings
+  suppressWarnings(
+    if( !is.na(
+      col %>% substr(nchar(col), nchar(col)) %>% as.integer() 
+      )) {
+      trim_name  <- col %>% substr(1, nchar(col) - 1)
+    } else {
+      trim_name <- col
+    }
+  )
+  
+  # Build string to return
+  string = paste("\n", "The", maxmin, "of", feature, "is found in", trim_name)
+  # Output string if date not required/not relevant
+  if(get_date == 0){
+    return(string)
+  }
+  
+  date <- data[[feature]][trim_name] %>% unlist()
+  if( pos == 1 ) {
+    date <- date %>% which.max()
+  } else if (pos == 2) {
+    date <- date %>% which.min()
+  }
+  date <- 1884 + date / 12
+  
+  names(date) <- trim_name
+  year <- date %>% floor()
+  month <- round((date%%1)*12,0)
+  if(month == 0){
+    year = year - 1
+    month = 12
+  }
+  if(month == 1){
+    month = "January"
+  } else if(month == 2){
+    month = "February"
+  } else if(month == 3){
+    month = "March"
+  } else if(month == 4){
+    month = "April"
+  } else if(month == 5){
+    month = "May"
+  } else if(month == 6){
+    month = "June"
+  } else if(month == 7){
+    month = "July"
+  } else if(month == 8){
+    month = "August"
+  } else if(month == 9){
+    month = "September"
+  } else if(month == 10){
+    month = "October"
+  } else if(month == 11){
+    month = "November"
+  } else if(month == 12){
+    month = "December"
+  } else {
+    month = "MONTH NOT FOUND"
+  }
+  
+  return(
+    paste(string, "on", month, year)
+  )
+}
+
+maxmin <- c("max", "min")
+
+extremes <- lapply(features, function(feature = feature)
+  lapply(maxmin, find_date, feature = feature, get_date = 1)) %>% unlist()
+```
+```{r include=TRUE}
+cat(extremes)
+```
+
+\newpage
+
+# Task III - Exploratory Data Analysis
+
+It is worth doing some EDA to answer some simple questions about the data, and to observe if there any obvious patterns that stand out.
+
+## Which district is the coldest/warmest?
+
+This was interpreted as follows: the warmest district will have the highest average of Tmean, and the coldest district will have the lowest average of Tmean.
+This is a simple function, the output of which is below.
+
+```{r}
+run_maxmin <- function(data_list){
+  lapply(features, function(feature = feature)
+  lapply(maxmin, find_date, feature = feature, data_list = data_list)) %>% unlist()
+}
+
+lapply(data, function(f=feature)
+  lapply(f, mean))
+
+data_sd <- find_prop(sd) %>% run_maxmin()
+
+
+# The warmest district will have the highest mean of tmean
+# The coldest district will have the lowest mean of tmean
+coldwarm <- data$Tmean %>% lapply(mean) %>% unlist() %>% highlow()
+coldwarm <- paste(
+  "The warmest district (with the highest average value of Tmean) is \n",
+  names(coldwarm)[1],
+  ", whilst the coldest district is ",
+  names(coldwarm)[2],
+  sep = ""
+)
+```
+```{r include = TRUE}
+cat(coldwarm)
+```
+## Which is the district with the widest temperature range?
+
+Whilst this could be as straightforward as finding each region's maximum Tmax and minimum Tmin, these extreme temperatures could be one-off events for a region. To answer this question with a better idea of what is typical for each region, the average of Tmin is subtracted from the average of Tmax for each region, and the region with the greatest difference in these values found.
+Again, this is a simple calculation from the data, and the output is shown below.
+
+
+```{r include = TRUE}
+
+avmax <- data$Tmax %>% lapply(mean)
+avmin <- data$Tmin %>% lapply(mean)
+maxrange <- mapply('-', avmax, avmin, SIMPLIFY = FALSE) %>%
+  unlist() %>% which.max()
+maxrange <- paste(
+  "The district with the widest temperature range is",
+  names(maxrange)
+)
+cat(maxrange)
+
+```
+## Are winters/summers getting colder/warmer?
+
+Whilst this question has four possible answers (assuming there is an observable change), it may also be useful to view any changes graphically. As the UK regions are likely to show very similar patterns in temperatures due to close geographical proximity, these are all overlayed in the graphs below, with any outliers still visible if present.  
+
+Regarding definition of summer and winter, some may take this to mean December - February and June - August respectively. However, others may argue that winter starts part-way through December and ends part-way through March, with similar cutoffs for summer. What both definitions agree on is that January and February are in Winter, and July and August are in Summer, so these are the months that will be used to represent the two seasons.  
+
+Despite temperature here not being a zero-based measurement (i.e. temp = 0 does not mean 'no temperature' as this measure can be negative also), this is useful to compare the change over time as positive or negative without needing to know the scale. Temperatures are adjusted to avoid zero or negative values in the index. The anchor point is at 1884, at index = 100, and a line is drawn on the graph at y = 100.  
+
+Additionally, the first-order difference in temperatures is also calculated between successive winters and summers respectively, to observe any steady progression in temperature changes over time in these seasons. A line is drawn at y = 0, to compare values above (increasing trend) and below (decreasing trend) the line.
+
+```{r}
+
+# Create a function to turn a data list into an annual timeseries from this data
+annual_ts <- function(data_list){
+  data_list %>% 
+    unlist() %>%
+    ts(start = c(1884),
+       end = c(2020),
+       frequency = 1)
+}
+
+get_season <- function(district, month1, month2) {
+  # The mean temperatures for each month are used
+  data_dist <- data[["Tmean"]][[district]] %>% as.vector()
+  # The temperatures of the two months chosen are averaged
+  reg_seas <- lapply(0:136, function(i) {
+    mean(c(data_dist[i*12 + month1], data_dist[i*12 + month2]))
+  })
+  reg_seas <- reg_seas %>% unlist()
+
+  # Find first difference, to show comparison of each year on the previous  
+  seas_diff <- diff(reg_seas)
+  seas_diff <- seas_diff %>% annual_ts()
+
+  # Create indexed values
+  temp_scaler <- min(reg_seas) %>% abs() + 1
+  seas_index <- lapply(1:137, function(j) {
+    ( 100 * (reg_seas[j] + temp_scaler) ) / ( mean( c(reg_seas + temp_scaler) ) )
+  })
+  seas_index <- seas_index %>% annual_ts()
+
+  return(list(seas_diff,seas_index))
+}
+# Apply functions to winter season months and plot graphs
+winters <- lapply(districts, get_season, 1, 2) %>% set_names(districts)
+```
+
+```{r include=TRUE, fig.cap= "Indexed Winter Temperatures graph"}
+plot(100, type="n", xlab="Year", ylab="Indexed temperature", xlim=c(1884, 2020), ylim=c(10,150),
+     main = "Indexed winter temperatures")
+lapply(districts, function(d=district){
+  lines(y = winters[[d]][[2]], x = 1884:2020, type = 'l', col="deepskyblue1")
+}) %>% invisible() # Invisible suppresses NULL output to console from lapply
+abline(h=100, col="gold3", lwd = 3, lty=2)
+```
+
+```{r include=TRUE, fig.cap= "First-order difference in winter temperatures graph"}
+plot(100, type="n", xlab="Year", ylab="Difference in temperature (first order)", xlim=c(1884, 2020), ylim=c(-7,7),
+     main = "First-order difference in winter temperatures")
+lapply(districts, function(d=district){
+  lines(y = winters[[d]][[1]], x = 1884:2020, type = 'l', col="deepskyblue1")
+}) %>% invisible()
+abline(h=0, col="gold3", lwd = 3, lty=2)
+```
+
+```{r include=TRUE, fig.cap= "Indexed summer temperatures graph"}
+# Apply functions to summer season months and plot graphs
+summers <- lapply(districts, get_season, 7, 8) %>% set_names(districts)
+plot(100, type="n", xlab="Year", ylab="Indexed temperature", xlim=c(1884, 2020), ylim=c(90, 110),
+     main = "Indexed summer temperatures")
+lapply(districts, function(d=district){
+  lines(y = summers[[d]][[2]], x = 1884:2020, type = 'l', col="firebrick2")
+}) %>% invisible()
+abline(h=100, col="gold3", lwd = 3, lty=2)
+```
+
+```{r include=TRUE, fig.cap= "First-order difference in summer temperatures graph"}
+plot(100, type="n", xlab="Year", ylab="Difference in temperature (first order)", xlim=c(1884, 2020), ylim=c(-5,5),
+     main = "First-order difference in summer temperatures")
+lapply(districts, function(d=district){
+  lines(y = summers[[d]][[1]], x = 1884:2020, type = 'l', col="firebrick2")
+}) %>% invisible()
+abline(h=0, col="gold3", lwd = 3, lty=2)
+```
+
+Both of the index graphs show that temperature fluctuations make it difficult to observe any sustained change in the season temperature over time until approximately 1990. From that point, it is clear that both summers and winters are warmer than previously, with oscillations mostly above the mean line, and the warming may have started as early as ~1970. This would suggest that summers and winters are getting warmer over a long time period, but whether they are still warming since ~1990 is unclear. The first order difference graphs reinforce the difficulty in interpreting temperature changes over the short-term, as there is no clear trend apparent.
+
+\newpage
+
+## Are temperatures becoming more extreme over the year?
+
+One way to answer this is as follows. This would be the case if, compared to the average temperature for the year in each region, the average temperature each month was straying further away. In other words, to examine this, annual standard deviations of the mean temperature are required.
+
+```{r}
+# Get mean temperatures
+data_Tmean <- lapply(districts, function(d = district){
+  data[["Tmean"]][[d]] %>% as.vector()
+}) %>% set_names(districts)
+
+# The annual standard deviations of Tmean temperatures are found
+dist_sd <- lapply(data_Tmean, function(data = data){
+  lapply(0:136, function(i = year){
+    c(data[i*12 + seq(1:12)]) %>% sd()
+  }) %>% annual_ts()
+})
+
+# The standard deviations are transformed by setting their means to zero, to allow overlaying of the regions on a graph
+dist_sd_trans <- lapply(districts, function(d = district){
+  dist_sd[[d]] - mean(dist_sd[[d]])
+}) %>% set_names(districts)
+```
+```{r include=TRUE, fig.cap= "Transformed standard deviations of mean temperatures"}
+plot(0, type="n",
+     xlab="Year",
+     ylab="Transformed SD of mean temperature",
+     xlim=c(1884, 2020),
+     ylim=c(-2,2),
+     main = "Transformed standard deviations of mean temperatures")
+lapply(districts, function(d=district){
+  lines(y = dist_sd_trans[[d]], x = 1884:2020, type = 'l', col="chartreuse2")
+}) %>% invisible()
+abline(h=0, col="gold3", lwd = 3, lty=2)
+```
+
+There doesn't appear to be any clear positive or negative trend in the standard deviations, implying that temperatures in general are not becoming more extreme.
+
+\newpage
+
+## Are 'spikes' in temperature becoming more/less common?
+
+Defining a 'spike' as an unusually high or low temperature for any given month, this can be examined by looking at the difference between the Tmean and both the Tmax and Tmin. A temperature 'spike' would change the max/min temperature to a greater extent than the mean, and so trends in the difference would indicate changes in spike frequency.
+
+```{r}
+diffmaxmean <- lapply(districts, function(d = district){
+  data$Tmax[[d]] - data$Tmean[[d]]
+}) %>% set_names(districts)
+diffminmean <- lapply(districts, function(d = district){
+  data$Tmin[[d]] - data$Tmean[[d]]
+}) %>% set_names(districts)
+
+time_full <- seq(from = 1884, by = 1/12, length.out = 1644)
+```
+```{r include=TRUE, fig.cap= "Difference between Max/Min and Average Temperature"}
+plot(0, type="n",
+     xlab="Year",
+     ylab="Temperature Difference",
+     xlim=c(1970, 2020),
+     ylim=c(-7,7),
+     main = "Difference between Max/Min and Average Temperature")
+lapply(districts, function(d=district){
+  lines(y = diffmaxmean[[d]], x = time_full, type = 'l', col="firebrick2")
+  lines(y = diffminmean[[d]], x = time_full, type = 'l', col="deepskyblue1")
+}) %>% invisible()
+abline(h=mean(unlist(diffminmean)), col="gold3", lwd = 2, lty=2)
+abline(h=mean(unlist(diffmaxmean)), col="gold3", lwd = 2, lty=2)
+
+```
+
+There doesn't appear to be any clear trend here, with no obvious rise/fall in the patterns of temperature differences, even when the graph is scaled to improve granularity. In the 137 years of data, the difference between the mean temperature and the min/max has been consistent at approximately -/+3.6 degrees, suggesting that temperature 'spikes' are not changing in frequency.
+
+\newpage
+
+# Task IV - Trend and Seasonality
+
+## Trend Estimation
+
+The final year of the data (2020) is removed, as this will be the test set to use later. The data from 1884 up to and including 2019 will therefore be the training set.
+
+Firstly, each time series has its trend estimated using a linear, quadratic, and cubic model. The Akaike Information Criterion (AIC) is used to determine the 'best' trend model out of these (lowest AIC).
+
+```{r include=TRUE}
+models <- c("linear", "quadratic", "cubic")
+
+# Subset data to 2019  
+data_2019 <- lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+    reg_feat_2019 <- data[[feature]][[district]] %>%
+      as.vector()
+    reg_feat_2019 <- reg_feat_2019[c(1:(length(reg_feat_2019) - 12))]
+    reg_feat_2019 <- reg_feat_2019 %>%
+      ts(start = c(1884, 1),
+         end = c(2019, 12),
+         frequency = 12)
+  }) %>% set_names(districts)
+}) %>% set_names(features)
+
+# Create time sequence from truncated data - as all data sets are the same length, one is arbitrarily selected
+time_2019 <- seq(from = 1884, by = 1/12, length.out = length(data_2019$Tmax$Midlands) )
+
+# Find trend models from a given polynomial degree
+trend <- function(degree){
+  lapply(features, function(feature = feature){
+    lapply(districts, function(district = district){
+      lm(data_2019[[feature]][[district]] ~ poly(time_2019, degree = degree, raw = TRUE))
+    }) %>% set_names(districts)
+  }) %>% set_names(features)
+}
+
+# Find linear, quadratic and cubic models
+trends <- lapply(1:3, trend) %>%
+  set_names(models)
+
+# List levels are reordered from degree-feature-district to feature-district-degree
+trends <- lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+    lapply(models, function(model = model){
+      trends[[feature]][[district]][[model]] <- trends[[model]][[feature]][[district]]
+    })
+  }) %>% set_names(districts)
+}) %>% set_names(features)
+
+# Trend models are compared and the best selected for each combination of feature and region
+model_choice <- lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+    lapply(trends[[feature]][[district]], AIC) %>%
+      set_names(models) %>% which.min() 
+  }) %>% set_names(districts)
+}) %>% set_names(features)
+
+# Show comparison of trend models selected
+degree_table <- c()
+degree_table <- lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+    degree_table <- degree_table %>%
+      cbind( model_choice[[feature]][[district]] %>% unlist() ) %>%
+      rownames(models)
+  }) %>% unlist() %>% set_names(districts)
+}) %>% set_names(features) %>% as.data.frame()
+kable(degree_table, caption = "Best scoring (AIC) trend models for each Region and Feature")
+```
+
+The vast majority of trend models selected were linear, with just 2 being cubic (both Tmax), and none being quadratic. The lack of quadratics indicates that trends are generally not reversing in sign - the exceptions are the 2 cubics found, which reverse sign but then re-reverse back.  
+
+
+```{r}
+
+# The final trend is extracted to access later
+final_trend <- list()
+# Remove the chosen trends from the data
+data_2019_notrend <- lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+    degree <- model_choice[[feature]][[district]]
+    model <- trends[[feature]][[district]][[model_choice[[feature]][[district]]]]
+    final_trend[[feature]][[district]] <<- model # Superassigned to access later
+    data_2019[[feature]][[district]] - fitted(model)
+  }) %>% set_names(districts)
+}) %>% set_names(features)
+
+```
+
+To illustrate the trend removal, the East Anglia - max temperature data set is used as an example. This showed a cubic trend, which is removed, leaving the mean at zero. The trendline and mean line are shown in red on their respective graphs.
+
+```{r include=TRUE, fig.cap="Monthly Maximum Temperature of East Anglia"}
+EA_example_pre <- fitted(trends$Tmax$East_Anglia[[model_choice$Tmax$East_Anglia]])
+EA_example_post <- data_2019$Tmax$East_Anglia - EA_example_pre
+
+plot(data_2019$Tmax$East_Anglia,
+     xlab="Year",
+     ylab="Temperature",
+     main = "Monthly Maximum Temperature of East Anglia")
+lines(time_2019, EA_example_pre, lwd = 3, col = "red")
+```
+
+```{r include=TRUE, fig.cap="Monthly Max Temperature of East Anglia: Trend Removed"}
+plot(data_2019_notrend$Tmax$East_Anglia,
+     xlab="Year",
+     ylab="Trend-removed Temperature",
+     main = "Monthly Max Temperature of East Anglia: Trend Removed")
+abline(h = mean(EA_example_post), lwd = 3, col = "red")
+```
+
+\newpage
+
+## Seasonality Estimation
+
+```{r}
+# Non-parametric estimation of seasonality
+# As all the data sets have the same structure, one is selected arbitrarily to provide a month index
+monthindex <- as.factor(cycle(data_2019_notrend$Tmax$Midlands))
+
+seas_mean <- function(data){
+  seas.means <- lm(data ~ monthindex - 1)
+}
+
+# # plot data with no trend and seasonal means estimation
+# plot(NULL, xlim = c(2000,2020), ylim = c(-10,10))
+# lines(midlands_nt,
+# #     main = main,
+# #     ylab = ylab,
+# #     xlab = xlab,
+#      lwd = 1,
+#      type = "l")
+# lines(time_2019,
+#       fitted(seas.means),
+#       lwd = 2,
+#       col = 'blue',
+#       lty = 1)
+
+# Set up cos and sin harmonic tables
+COS <- SIN <- matrix(nrow = length(data_2019_notrend$Tmax$Midlands), ncol = 6)
+
+for(i in 1:6){
+  COS[, i] <- cos(2 * pi * i * time_2019)
+  SIN[, i] <- sin(2 * pi * i * time_2019)
+}
+
+freq_names <- c(paste("f", 1:6, sep = ""))
+colnames(COS) <- freq_names
+colnames(SIN) <- freq_names
+
+seas_harm <- function(data, order_cos, order_sin){
+  # Note: the intercept is not included as this has already been accounted for in the trend removal
+  harmonics <- lm(data ~ . - 1,
+                data = data.frame(COS = COS[, order_cos],
+                                  SIN = SIN[, order_sin]))
+}
+
+# Find significant harmonic models for each feature and district
+sig_harm <- list()
+lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+    max_order <- 6
+    # Select only those coefficients at 95% or greater confidence
+    harm_sig <- summary(
+      data_2019_notrend[[feature]][[district]] %>%
+      seas_harm(1:max_order, 1:max_order)
+      )$coefficients[, 4] < 0.05
+    cos_sig <- which(harm_sig[1:max_order]) %>%
+      as.numeric()
+    sin_sig <- which(harm_sig[(max_order+1):(max_order+max_order)]) %>%
+      as.numeric()
+    # Write result to sig_harm list
+    sig_harm[[feature]][[district]]$cos <<- cos_sig
+    sig_harm[[feature]][[district]]$sin <<- sin_sig
+  })
+})
+
+# Compare harmonic models found
+harm_table <- matrix(nrow = 10, ncol = 6)
+rownames(harm_table) <- districts
+trig_list <- c("cos","sin")
+
+# Write harmonics to table
+lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+    lapply(trig_list, function(trig = trig){
+      hpos <- 1
+      if(trig == "sin"){ hpos <- hpos + 1}
+      if(feature == "Tmin"){ hpos <- hpos + 2 }
+      if(feature == "Tmean"){ hpos <- hpos + 4 }
+      harm_table[district,hpos] <<- paste(sig_harm[[feature]][[district]][[trig]],collapse = ", ") %>% unlist()
+    })
+  })
+})
+colnames(harm_table) <- 
+  lapply(features, function(feature = feature){
+    lapply(trig_list, function(trig = trig){
+      paste(feature,trig,sep = ":")
+    })
+  }) %>% unlist()
+harm_table <- harm_table %>% as.data.frame()
+```
+
+Having removed the trends from each time series, seasonality is estimated in two ways. Firstly, a means method is used to find the mean temperature for each calendar month (i.e. every January, every February etc.), and this value is used as an estimation of any calendar month's temperature.  
+
+The other method uses sine-cosine models (a.k.a. 'harmonic' models) up to order 6, with each order attempting to capture a different seasonal 'wave' through the data. Each of these orders is assessed for statistical significance, with a confidence level here of 95%, and insignificant terms discarded from the harmonic model.  
+
+```{r include=TRUE}
+kable(harm_table, caption = "Significant orders of the harmonic seasonality model")
+```
+
+We see upon comparison that most seasonality models had significant terms only up to order 2 for both cos and sin. The only other clear pattern is that Tmax:cos shows order 3 for most regions. No model had more than 3 significant terms in sin or cos.  
+
+Whilst only significant terms have been selected for seasonality, the coefficients of these terms may be small to the point of overfitting on the data. To select a parsimonious seasonality model, the AIC is again used as the decision criterion, with the goal of selecting the model with the lowest AIC.
+
+```{r}
+best_seas <- lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+
+    # Get the significant terms for each model
+    cos <- sig_harm[[feature]][[district]]$cos %>% as.vector()
+    sin <- sig_harm[[feature]][[district]]$sin %>% as.vector()
+    
+    # Get the maximum order to avoid running unnecessary models
+    max_order <- cos %>% max()
+    if(sin %>% max() > max_order) {max_order <- sin %>% max()}
+    cos_terms <- c()
+    sin_terms <- c()
+    
+    # Find AIC scores of each order model
+    lapply(0:max_order, function(i=i){
+      # Means model will be represented by harmonic order == 0
+      if(i == 0){
+        data_2019_notrend[[feature]][[district]] %>%
+          seas_mean() %>%
+          AIC()
+      } else {
+      
+      # Only include a term from the significant terms
+      if(i %in% cos){
+        cos_terms <<- append(cos_terms, i)
+      }
+      if(i %in% sin){
+        sin_terms <<- append(sin_terms, i)
+      }
+      
+      data_2019_notrend[[feature]][[district]] %>%
+        seas_harm(cos_terms, sin_terms) %>%
+        AIC()
+      }
+    }) %>% which.min() - 1 # Harmonic orders are increased by 1 due to running means model in the zeroth position
+  }) %>% set_names(districts)
+}) %>% set_names(features)
+
+# Build a table to view results
+best_seas_table <- matrix(nrow = 10, ncol = 3)
+rownames(best_seas_table) <- districts
+colnames(best_seas_table) <- features
+lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+    best_seas_table[district,feature] <<- best_seas[[feature]][[district]]
+  })
+})
+best_seas_table <- best_seas_table %>% as.data.frame()
+```
+
+```{r include=TRUE}
+kable(best_seas_table, caption = "Best scoring (lowest AIC) model of seasonal order")
+```
+
+The comparison table of the best scoring (lowest AIC) seasonal models show that none of the means models (would be shown as order 0) scored better than the harmonic models. Additionally, the highest order models were chosen from those with significant terms, suggesting that filtering by significant terms already performed some of the work of the AIC scoring in excluding unnecessary parameters. With this in mind, the chosen seasonal models can be found by simply referring to the previous table of significant harmonic orders.
+
+```{r}
+data_final <- lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+    
+    cos <- sig_harm[[feature]][[district]]$cos %>% as.vector()
+    sin <- sig_harm[[feature]][[district]]$sin %>% as.vector()
+    
+    seas <- data_2019_notrend[[feature]][[district]] %>%
+      seas_harm(cos, sin)
+    
+    noseas <- data_2019_notrend[[feature]][[district]] - fitted(seas)
+  }) %>% set_names(districts)
+}) %>% set_names(features)
+```
+
+The respective seasonal estimations are removed from each time series to give a 'Final' model for each, and leaving a series of residuals for each time series.
+
+To illustrate the seasonal component removal, the East Anglia - max temperature data set is again used as an example. This showed a harmonic order 2 seasonality, which is removed to leave the residuals graph (the mean line is shown in red).
+
+```{r include=TRUE, fig.cap="Monthly Maximum Temperature of East Anglia: Trend Removed"}
+# plot(data_2019$Tmax$East_Anglia,
+#      xlab="Year",
+#      ylab="Temperature",
+#      main = "Monthly Maximum Temperature of East Anglia")
+# lines(time_2019, EA_example_pre, lwd = 3, col = "red")
+
+plot(data_2019_notrend$Tmax$East_Anglia,
+     xlab="Year",
+     ylab="Trend-removed Temperature",
+     main = "Monthly Max Temperature of East Anglia: Trend Removed",
+     xlim = c(1990,2020),
+     ylim = c(-10,10))
+abline(h = mean(EA_example_post), lwd = 3, col = "red")
+```
+
+```{r include=TRUE, fig.cap="Maximum Temperature of East Anglia: Trend and Seasonality Removed"}
+plot(data_final$Tmax$East_Anglia,
+     xlab="Year",
+     ylab="Temperature Residuals",
+     main = "Max Temp. of East Anglia: Trend and Seasonality Removed",
+     xlim = c(1990,2020),
+     ylim = c(-10,10))
+abline(h = mean(data_final$Tmax$East_Anglia), lwd = 2, col = "red")
+```
+
+In addition to the 'Final' trend and seasonality models estimated, a 'Test' model of a quadratic trend and sin-cosine harmonics of order 2 is produced to be run in parallel for all time series'. This is also shown below, where the residuals appear to be very similar to the 'Final' model.
+
+```{r}
+test_trend <- trend(2)
+
+data_test <- lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+    
+    notrend <- data_2019[[feature]][[district]] - fitted(test_trend[[feature]][[district]])
+    
+    cos <- sin <- 1:2
+    seas <- notrend %>% seas_harm(cos, sin)
+    noseas <- notrend - fitted(seas)
+  }) %>% set_names(districts)
+}) %>% set_names(features)
+```
+```{r include=TRUE, fig.cap="Max Temp. of East Anglia: Test Model - Quadratic Trend and Order-2 Seasonality Removed"}
+plot(data_test$Tmax$East_Anglia,
+     xlab="Year",
+     ylab="Temperature Residuals",
+     main = "Max Temp. of East Anglia: Test Model - \n Quadratic Trend and Order-2 Seasonality Removed",
+     xlim = c(1990,2020),
+     ylim = c(-10,10))
+abline(h = mean(data_test$Tmax$East_Anglia), lwd = 2, col = "red")
+```
+
+```{r}
+# Final combined model
+final <- lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+      lm(data_2019[[feature]][[district]] ~ .,
+        data.frame(
+          TIME = poly(time_2019,
+          degree = length(final_trend[[feature]][[district]]$coefficients) - 1,
+          raw = TRUE),
+        COS = COS[,sig_harm[[feature]][[district]]$cos],
+        SIN = SIN[,sig_harm[[feature]][[district]]$sin]
+    )) 
+  }) %>% set_names(districts)
+}) %>% set_names(features)
+
+# Test combined model
+test <- lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+      lm(data_2019[[feature]][[district]] ~ .,
+        data.frame(
+          TIME = poly(time_2019,
+          degree = 2,
+          raw = TRUE),
+        COS = COS[,1:2],
+        SIN = SIN[,1:2]
+    )) 
+  }) %>% set_names(districts)
+}) %>% set_names(features)
+```
+
+
+To show the final combined modeling of trend and seasonality, the graph below shows the original data in black, and the 'Final' model in pink.
+
+```{r include=TRUE, fig.cap="Max Temperature in East Anglia: Trend and Seasonality modelling"}
+plot(data_2019$Tmax$East_Anglia,
+     xlim = c(2005,2020),
+     lwd = 3,
+     ylab = "Temperature",
+     main = "Max Temperature in East Anglia: \n Trend and Seasonality modelling"
+     )
+lines(x = time_2019, y = final$Tmax$East_Anglia %>% fitted(), type = 'l', col = "salmon", lwd = 1.8)
+
+```
+\newpage
+
+# Task V - ARMA and Forecasting
+
+The 30 residual series' from the 'Final' models and the 30 'Test' series are fitted with ARMA estimation models. Autoregression and Moving Average terms are each estimated from order 0 up to order 3. The 'best' model is again decided using the lowest AIC, and from this, predictions are made for the year 2020.
+
+```{r}
+# Whilst data_final should hold the residuals, this has been found in two steps, where rounding errors etc. may have occurred due to storing intermediate values. Instead, the residuals are re-calculated from the combined model, and the same is done for the test residuals for the same reason.
+final_residuals <- lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+    data_2019[[feature]][[district]] - ( final[[feature]][[district]] %>% fitted() )
+  }) %>% set_names(districts)
+}) %>% set_names(features)
+
+test_residuals <- lapply(features, function(feature = feature){
+  lapply(districts, function(district = district){
+    data_2019[[feature]][[district]] - ( test[[feature]][[district]] %>% fitted() )
+  }) %>% set_names(districts)
+}) %>% set_names(features)
+
+# Find the optimal ARMA model
+fit_arma <- function(residuals){
+  aic <- matrix(0,4,4)
+  for (i in 0:3) {
+    for (j in 0:3) {
+      suppressWarnings( # Avoids giving an iteration limit warning
+      arma_model <- arima(residuals,
+                       order = c(i, 0, j),
+                       method = "ML",
+                       include.mean = FALSE)
+      )
+
+      aic[i+1, j+1] <- arma_model$aic
+    }
+  }
+  order <- which(aic == (aic %>% min()),
+                 arr.ind = TRUE) - 1
+  p <- order[1]
+  q <- order[2]
+  
+  suppressWarnings(
+  chosen_arma <- arima(residuals,
+                       order = c(p, 0, q),
+                       method = "ML",
+                       include.mean = FALSE)
+  )
+}
+
+# Apply the ARMA function 'fit_arma' to the nested list structure
+set_arma <- function(residuals){
+  lapply(features, function(feature = feature){
+    lapply(districts, function(district = district){
+      residuals[[feature]][[district]] %>% fit_arma()
+    }) %>% set_names(districts)
+  }) %>% set_names(features)
+}
+
+# Save optimal models for each set of residuals
+final_models <- test_models <- list()
+final_models <- set_arma(final_residuals)
+test_models <- set_arma(test_residuals)
+
+# Set up forecast for 2020
+time_2020 <- seq(from = 2020, by = 1/12, length.out = 12)
+
+COS_2020 <- SIN_2020 <- matrix(nrow = 12, ncol = 6)
+for( i in 1:6){
+  COS_2020[, i] <- cos(2 * pi * i * time_2020)
+  SIN_2020[, i] <- cos(2 * pi * i * time_2020)
+}
+colnames(COS_2020) <- freq_names
+colnames(SIN_2020) <- freq_names
+
+# Function to generate predictions for final or test models
+make_prediction <- function(final_pred = 1){
+  lapply(features, function(feature = feature){
+    lapply(districts, function(district = district){
+      
+      if(final_pred == 1){
+        combined <- final[[feature]][[district]]
+        degree <- model_choice[[feature]][[district]]
+        cos_terms <- sig_harm[[feature]][[district]]$cos
+        sin_terms <- sig_harm[[feature]][[district]]$sin
+        res_model <- final_models[[feature]][[district]]
+      } else {
+        combined <- test[[feature]][[district]]
+        degree <- 2
+        cos_terms <- 1:2
+        sin_terms <- 1:2
+        res_model <- test_models[[feature]][[district]]
+      }
+      
+      combined_pred <- combined %>%
+        predict(newdata = data.frame(TIME = poly(time_2020,
+                                                 degree = degree,
+                                                 raw = TRUE),
+                                     COS = COS_2020[, cos_terms],
+                                     SIN = SIN_2020[, sin_terms]
+        ))
+      
+      residuals_pred <- predict(res_model, n.ahead = 12)$pred
+      
+      prediction <- combined_pred + residuals_pred
+      
+    }) %>% set_names(districts)
+  }) %>% set_names(features)
+}
+
+# Generate predictions
+final_prediction <- make_prediction()
+test_prediction <- make_prediction(final_pred = 0)
+```
+
+To demonstrate the 'Final' model predictions made, the Tmax of East Anglia is again shown (in black), with the combined trend, seasonality and ARMA predictions in magenta.
+
+```{r include=TRUE, fig.cap="Predicted vs Actual Maximum Temperatures in East Anglia"}
+plot(data$Tmax$East_Anglia,
+     xlim = c(2016,2021),
+     lwd = 3,
+     ylab = "Temperature",
+     main = "Predicted vs Actual Maximum Temperatures in East Anglia"
+     )
+lines(final_prediction$Tmax$East_Anglia, col = "magenta", lwd = 2)
+```
+
+## Prediction Accuracy
+
+To assess the accuracy of the predictions generated, the root mean squared error (RMSE) is found for the predictions vs the actual data for 2020. This is an appropriate measure, as it is a widely used metric, fairly intuitive to interpret, and all of the data involved is on the same scale, allowing direct comparison. This is calculated on a month-basis, giving the RMSE for any given month's prediction.
+
+```{r}
+find_rmse <- function(model_prediction){
+  # sum_rmse <- 0
+  sum_error_sq <- 0
+  no_of_predictions <- 0
+  lapply(features, function(feature = feature){
+    lapply(districts, function(district = district){
+      
+      # Get the actual 2020 data
+      data_2020 <- window(data[[feature]][[district]], start = 2020)
+      # Find the error for the model
+      error <- model_prediction[[feature]][[district]] - data_2020
+
+      # # Calculate the RMSE for each feature-district combination
+      # rmse <- error^2 %>% mean() %>% sqrt()
+      # # Add the RMSE to the cumulative total
+      # sum_rmse <<- sum_rmse + rmse
+      
+      # Find the sum of the squared errors for each model
+      tot_error_sq <- error^2 %>% sum()
+      sum_error_sq <<- sum_error_sq + tot_error_sq
+      # Count the total number of predictions
+      no_of_predictions <<- no_of_predictions + length(error)
+    })
+  })
+  # Find the mean of the errors
+  mean_error_sq <- sum_error_sq / no_of_predictions
+  # Calculate the RMSE per monthly prediction
+  rmse <- mean_error_sq %>% sqrt()
+  names(rmse) <- "RMSE"
+  return(rmse)
+  # names(sum_rmse) <- "RMSE"
+  # return(sum_rmse)
+}
+```
+
+The RMSE is found for the Final models and Test models. As a reminder, the Final models used a calculated estimation of the trends and seasonality, whereas the Test models used a quadratic trend and a harmonic order-2 seasonality.
+
+```{r include=TRUE}
+# Calculate the RMSE for each model
+cat("'Final' model RMSE:\n")
+final_prediction %>% find_rmse() %>% cat()
+cat("\n'Test' model RMSE:\n")
+test_prediction %>% find_rmse() %>% cat()
+```
+The RMSE for the 'final' models was 1.52 degrees, whereas for the 'test' models it was 1.51 degrees. This gives an idea of the error of each month's prediction vs the actual value. The lower RMSE indicates that the 'Test' modelling performed better, despite the 'Final' models having parameters calculated from the data.
+
+
+## Interpretation and Further Analysis
+
+The 'Test' models used a quadratic trend model, suggesting an inversion of the trend at some point. The 'Final' models all used a linear or cubic model, indicating a trend in one general direction (with zero- or two-points of inflection respectively). The quadratic trend model makes less sense over a longer period, as broader evidence suggests temperatures have generally been rising since the industrial revolution. This very small difference in RMSE may therefore change in favour of the 'Final' models if the predictions would be tested over a longer period.  
+
+Similarly, the seasonality for the 'Test' models was not checked for significance of terms. This may have meant insignificant terms being included in the combined 'Test' models, which in turn could by chance push the RMSE value marginally lower than for the 'Final' models. Again, these models needs to be tested over a longer period to determine the better model, as only one seasonal cycle (12 months) was tested. This is outside of the scope of this report, but is a sensible first step for any further analysis. 
