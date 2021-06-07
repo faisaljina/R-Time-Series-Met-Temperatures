@@ -3,8 +3,13 @@ title: "Time Series - Met Temperatures"
 subtitle: "Tackling Time Series in Base R"
 author: "Faisal Jina"
 date: "07/06/2021"
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'index.html'))})
 output:
-  pdf_document:
+  html_document:
     toc: true
     toc_depth: 2
     number_sections: true
@@ -27,7 +32,7 @@ library(knitr)
 
 # Introduction
 
-This report look to examine temperature patterns across the UK. Specifically, a time series approach is used, and the maximum (Tmax), minimum (Tmin) and average (Tmean) temperature data is used from the government Met Office website (https://www.metoffice.gov.uk/research/climate/maps-and-data/uk-and-regional-series). Trends and seasonality are estimated for each region/district selected, and subsequent residuals are modelled to produce ARMA models. Forecasts are then produced to assess accuracy of the predictions.
+This report looks to examine temperature patterns across the UK. Specifically, a time series approach is used, and the maximum (Tmax), minimum (Tmin) and average (Tmean) temperature data is used from the government Met Office website (https://www.metoffice.gov.uk/research/climate/maps-and-data/uk-and-regional-series). Trends and seasonality are estimated for each region/district selected, and subsequent residuals are estimated using ARMA models. Forecasts are then produced to assess the accuracy of the predictions.
 
 
 # Task I - Getting the data
