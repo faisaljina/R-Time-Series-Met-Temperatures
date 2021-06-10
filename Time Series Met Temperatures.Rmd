@@ -83,7 +83,7 @@ cat(paste("- ", features, collapse = "\n"))
 cat("\nDistricts: \n")
 cat(paste("- ", districts, collapse = "\n"))
 ```
-This gives a total of 30 time series object to work with.  
+This gives a total of 30 time series objects to work with.  
 
 
 # Task II - R programming
@@ -310,7 +310,7 @@ plot(100, type="n", xlab="Year", ylab="Indexed temperature", xlim=c(1884, 2020),
 lapply(districts, function(d=district){
   lines(y = winters[[d]][[2]], x = 1884:2020, type = 'l', col="deepskyblue1")
 }) %>% invisible() # Invisible suppresses NULL output to console from lapply
-abline(h=100, col="gold3", lwd = 3, lty=2)
+abline(h=100, col="bisque4", lwd = 3, lty=2)
 ```
 
 ```{r include=TRUE, fig.cap= "First-order difference in winter temperatures graph"}
@@ -319,7 +319,7 @@ plot(100, type="n", xlab="Year", ylab="Difference in temperature (first order)",
 lapply(districts, function(d=district){
   lines(y = winters[[d]][[1]], x = 1884:2020, type = 'l', col="deepskyblue1")
 }) %>% invisible()
-abline(h=0, col="gold3", lwd = 3, lty=2)
+abline(h=0, col="bisque4", lwd = 3, lty=2)
 ```
 
 ```{r include=TRUE, fig.cap= "Indexed summer temperatures graph"}
@@ -330,7 +330,7 @@ plot(100, type="n", xlab="Year", ylab="Indexed temperature", xlim=c(1884, 2020),
 lapply(districts, function(d=district){
   lines(y = summers[[d]][[2]], x = 1884:2020, type = 'l', col="firebrick2")
 }) %>% invisible()
-abline(h=100, col="gold3", lwd = 3, lty=2)
+abline(h=100, col="bisque4", lwd = 3, lty=2)
 ```
 
 ```{r include=TRUE, fig.cap= "First-order difference in summer temperatures graph"}
@@ -339,7 +339,7 @@ plot(100, type="n", xlab="Year", ylab="Difference in temperature (first order)",
 lapply(districts, function(d=district){
   lines(y = summers[[d]][[1]], x = 1884:2020, type = 'l', col="firebrick2")
 }) %>% invisible()
-abline(h=0, col="gold3", lwd = 3, lty=2)
+abline(h=0, col="bisque4", lwd = 3, lty=2)
 ```
 
 Both of the index graphs show that temperature fluctuations make it difficult to observe any sustained change in the season temperature over time until approximately 1990. From that point, it is clear that both summers and winters are warmer than previously, with oscillations mostly above the mean line, and the warming may have started as early as ~1970. This would suggest that summers and winters are getting warmer over a long time period, but whether they are still warming since ~1990 is unclear. The first order difference graphs reinforce the difficulty in interpreting temperature changes over the short-term, as there is no clear trend apparent.
@@ -378,7 +378,7 @@ plot(0, type="n",
 lapply(districts, function(d=district){
   lines(y = dist_sd_trans[[d]], x = 1884:2020, type = 'l', col="chartreuse2")
 }) %>% invisible()
-abline(h=0, col="gold3", lwd = 3, lty=2)
+abline(h=0, col="bisque4", lwd = 3, lty=2)
 ```
 
 There doesn't appear to be any clear positive or negative trend in the standard deviations, implying that temperatures in general are not becoming more extreme.
@@ -410,8 +410,8 @@ lapply(districts, function(d=district){
   lines(y = diffmaxmean[[d]], x = time_full, type = 'l', col="firebrick2")
   lines(y = diffminmean[[d]], x = time_full, type = 'l', col="deepskyblue1")
 }) %>% invisible()
-abline(h=mean(unlist(diffminmean)), col="gold3", lwd = 2, lty=2)
-abline(h=mean(unlist(diffmaxmean)), col="gold3", lwd = 2, lty=2)
+abline(h=mean(unlist(diffminmean)), col="bisque4", lwd = 2, lty=2)
+abline(h=mean(unlist(diffmaxmean)), col="bisque4", lwd = 2, lty=2)
 
 ```
 
@@ -791,7 +791,7 @@ test <- lapply(features, function(feature = feature){
 ```
 
 
-To show the final combined modeling of trend and seasonality, the graph below shows the original data in black, and the 'Final' model in pink.
+To show the final combined modeling of trend and seasonality, the graph below shows the original data in black, and the 'Final' model in violet.
 
 ```{r include=TRUE, fig.cap="Max Temperature in East Anglia: Trend and Seasonality modelling"}
 plot(data_2019$Tmax$East_Anglia,
@@ -800,7 +800,7 @@ plot(data_2019$Tmax$East_Anglia,
      ylab = "Temperature",
      main = "Max Temperature in East Anglia: \n Trend and Seasonality modelling"
      )
-lines(x = time_2019, y = final$Tmax$East_Anglia %>% fitted(), type = 'l', col = "salmon", lwd = 1.8)
+lines(x = time_2019, y = final$Tmax$East_Anglia %>% fitted(), type = 'l', col = "darkorchid3", lwd = 2)
 
 ```
 \newpage
@@ -921,11 +921,11 @@ To demonstrate the 'Final' model predictions made, the Tmax of East Anglia is ag
 ```{r include=TRUE, fig.cap="Predicted vs Actual Maximum Temperatures in East Anglia"}
 plot(data$Tmax$East_Anglia,
      xlim = c(2016,2021),
-     lwd = 3,
+     lwd = 3.5,
      ylab = "Temperature",
      main = "Predicted vs Actual Maximum Temperatures in East Anglia"
      )
-lines(final_prediction$Tmax$East_Anglia, col = "magenta", lwd = 2)
+lines(final_prediction$Tmax$East_Anglia, col = "magenta", lwd = 2.5)
 ```
 
 ## Prediction Accuracy
