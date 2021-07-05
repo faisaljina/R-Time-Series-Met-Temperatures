@@ -5,7 +5,7 @@
 
 There are many packages around to handle, estimate and predict on time series data, including popular packages `forecast` and `astsa`.
 
-However, it is useful for a deeper understanding to be able to perform time series analysis without reliance on pre-built packages. This project is an attempt to do exactly that!
+However, it is useful for a deeper understanding to be able to perform time series analysis without reliance on these pre-built packages. This project is an attempt to do exactly that!
 
 ## Highlights
 ### Features
